@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Split Bill AI</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    form { margin-bottom: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+    th { background: #f4f4f4; }
+  </style>
+</head>
+<body>
+  <h2>Tambah Orang</h2>
+  <input type="text" id="newPerson" placeholder="Nama orang">
+  <button id="addPerson">Tambah</button>
+  <ul id="peopleList"></ul>
+
+  <h2>Upload Struk Belanja</h2>
+  <form id="uploadForm">
+    <input type="file" name="image" accept="image/*" required>
+    <button type="submit">Upload</button>
+  </form>
+
+  <h3>Hasil OCR:</h3>
+  <pre id="rawJson"></pre>
+
+  <h3>Pilih Item per Orang</h3>
+  <table id="resultTable"></table>
+
+  <button id="showTotal" style="margin-top:20px; display:none;">Lihat Total</button>
+
+  <h3>Total Per Orang:</h3>
+  <ul id="totals"></ul>
+
+  <script>
+    const form = document.getElementById("uploadForm");
+    const rawJson = document.getElementById("rawJson");
+    const resultTable = document.getElementById("resultTable");
+    const totalsEl = document.getElementById("totals");
+    const showTotalBtn = document.getElementById("showTotal");
+
+    const people = [];
+    let parsedData = [];
+
+    // tambah orang
+    document.getElementById("addPerson").addEventListener("click", () => {
+      const name = document.getElementById("newPerson").value.trim();
+      if (name && !people.includes(name)) {
+        people.push(name);
+        renderPeople();
+      }
+      document.getElementById("newPerson").value = "";
+    });
+
+    function renderPeople() {
+      const list = document.getElementById("peopleList");
+      list.innerHTML = "";
+      people.forEach(p => {
+        const li = document.createElement("li");
+        li.textContent = p;
+        list.appendChild(li);
+      });
+    }
+
+    // upload image ke server
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const res = await fetch("/upload", { method: "POST", body: formData });
+      const json = await res.json();
+
+      try {
+        let cleaned = json.data.replace(/```json/g, "").replace(/```/g, "").trim();
+        parsedData = JSON.parse(cleaned);
+        rawJson.textContent = JSON.stringify(parsedData, null, 2);
+        renderTable();
+      } catch (err) {
+        rawJson.textContent = "Gagal parse JSON:\n" + json.data;
+        resultTable.innerHTML = "";
+      }
+    });
+
+    function renderTable() {
+      if (!Array.isArray(parsedData) || people.length === 0) return;
+
+      let tableHTML = `
+        <tr><th>Item</th><th>Qty</th><th>Harga</th><th>Pilih Orang</th></tr>
+      `;
+
+      parsedData.forEach((row, idx) => {
+        // buat opsi untuk setiap qty
+        for (let i = 0; i < row.qty; i++) {
+          tableHTML += `
+            <tr>
+              <td>${row.item}</td>
+              <td>1</td>
+              <td>${row.harga}</td>
+              <td>
+                <select data-idx="${idx}" data-unit="${i}">
+                  <option value="">-- pilih --</option>
+                  ${people.map(p => `<option value="${p}">${p}</option>`).join("")}
+                </select>
+              </td>
+            </tr>
+          `;
+        }
+      });
+
+      resultTable.innerHTML = tableHTML;
+      showTotalBtn.style.display = "inline-block";
+    }
+
+    showTotalBtn.addEventListener("click", hitungTotal);
+
+    function hitungTotal() {
+      const totals = {};
+      people.forEach(p => (totals[p] = 0));
+
+      document.querySelectorAll("select[data-idx]").forEach(sel => {
+        const idx = sel.dataset.idx;
+        const orang = sel.value;
+        if (orang) {
+          const row = parsedData[idx];
+          totals[orang] += row.harga;
+        }
+      });
+
+      totalsEl.innerHTML = "";
+      for (const [orang, total] of Object.entries(totals)) {
+        const li = document.createElement("li");
+        li.textContent = `${orang}: Rp ${total.toLocaleString()}`;
+        totalsEl.appendChild(li);
+      }
+    }
+  </script>
+</body>
+</html>
